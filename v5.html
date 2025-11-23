@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Generador de Informes — PDF completo y Gmail popup</title>
+
+  <!-- Fuente e iconos -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet"/>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+
+  <!-- Bootstrap para utilidades de UI -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+
+  <!-- html2canvas + jsPDF (usar versiones conocidas para fiabilidad) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    :root{
+      --bg-grad-1: #fff7ff;
+      --bg-grad-2: #f0f9ff;
+      --accent-a: #7b2ff7;
+      --accent-b: #2ac7ff;
+      --card: #ffffff;
+      --muted: #6b7280;
+    }
+
+    body{
+      font-family: "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: linear-gradient(180deg,var(--bg-grad-1), var(--bg-grad-2));
+      color: #0f172a;
+      padding: 28px 16px;
+    }
+
+    .header {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      background: linear-gradient(90deg,var(--accent-a), var(--accent-b));
+      color: white;
+      padding: 18px;
+      border-radius: 14px;
+      box-shadow: 0 12px 30px rgba(42,199,255,0.08);
+      margin-bottom: 18px;
+    }
+    .brand { font-weight:700; font-size:1.15rem; display:flex; gap:10px; align-items:center;}
+    .card-panel {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 8px 28px rgba(15,23,42,0.06);
+    }
+
+    /* Preview area */
+    #reportPreview {
+      background: white;
+      border-radius: 10px;
+      padding: 18px;
+      border: 1px solid rgba(15,23,42,0.04);
+      min-height: 420px;
+    }
+
+    .muted { color: var(--muted); font-size:0.92rem; }
+
+    .btn-primary { background: linear-gradient(90deg,var(--accent-a),var(--accent-b)); border: none; box-shadow: 0 6px 18px rgba(123,47,247,0.12); }
+
+    /* Styles para preview (también inyectaremos versiones similares en el PDF) */
+    .pv-header {
+      display:flex; justify-content:space-between; align-items:flex-start;
+      padding: 12px;
+      border-radius: 10px;
+      background: linear-gradient(90deg, rgba(123,47,247,0.08), rgba(42,199,255,0.06));
+    }
+    .pv-title { color: var(--accent-a); font-weight:700; font-size:1.35rem; margin:0; }
+    .pv-meta { color:#334155; font-size:0.95rem; margin-top:6px; }
+
+    .pv-metrics { display:flex; gap:12px; margin:14px 0; }
+    .pv-metric { flex:1; padding:12px; border-radius:10px; background: linear-gradient(180deg,#ffffff,#fbfdff); border:1px solid rgba(15,23,42,0.04); text-align:center; }
+    .pv-metric .label { color:#64748b; font-size:0.85rem; }
+    .pv-metric .value { color:var(--accent-b); font-weight:700; margin-top:6px; font-size:1.05rem; }
+
+    /* evitar saltos dentro de bloques importantes al generar PDF */
+    .pv-section, .pv-metric, .pv-header { page-break-inside: avoid; -webkit-column-break-inside: avoid; break-inside: avoid; }
+
+    @media (max-width: 900px) {
+      #reportPreview { min-height:320px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+          <defs>
+            <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0" stop-color="#7b2ff7"/>
+              <stop offset="1" stop-color="#2ac7ff"/>
+            </linearGradient>
+          </defs>
+          <rect x="6" y="10" width="52" height="44" rx="8" fill="url(#g)"/>
+          <path d="M18 22h28v4H18zM18 30h28v4H18zM18 38h16v4H18z" fill="white" opacity="0.95"/>
+        </svg>
+        Generador de Informes
+      </div>
+      <div class="text-end">
+        <div style="font-weight:600">Diseño colorido</div>
+        <div class="muted" style="font-size:0.87rem">PDF completo y ventana Gmail (popup)</div>
+      </div>
+    </div>
+
+    <ul class="nav nav-tabs tabs" id="mainTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="home-tab" data-bs-toggle="tab" data-bs-target="#home" type="button" role="tab"><i class="fa-solid fa-pen-to-square me-1"></i> Generador</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="about-tab" data-bs-toggle="tab" data-bs-target="#about" type="button" role="tab"><i class="fa-solid fa-users me-1"></i> Nosotros</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="features-tab" data-bs-toggle="tab" data-bs-target="#features" type="button" role="tab"><i class="fa-solid fa-list-check me-1"></i> Características</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact" type="button" role="tab"><i class="fa-solid fa-envelope me-1"></i> Contacto</button>
+      </li>
+    </ul>
+
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="home" role="tabpanel">
+        <div class="row g-4">
+          <div class="col-lg-6">
+            <div class="card-panel">
+              <h4 style="margin-bottom:6px">Crear informe</h4>
+              <div class="muted" style="margin-bottom:12px">Rellena los campos, visualiza la vista previa y genera el PDF. El PDF ahora se genera correctamente en múltiples páginas y se ve completo al abrirlo.</div>
+
+              <form id="reportForm">
+                <div class="row g-2">
+                  <div class="col-md-6">
+                    <label class="form-label">Título</label>
+                    <input class="form-control" id="title" value="Informe de ejemplo — Proyecto Aurora" />
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Autor / Equipo</label>
+                    <input class="form-control" id="author" value="Equipo de Producto" />
+                  </div>
+
+                  <div class="col-md-6">
+                    <label class="form-label">Empresa</label>
+                    <input class="form-control" id="company" value="ACME Labs" />
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Versión</label>
+                    <input class="form-control" id="version" value="v2.1" />
+                  </div>
+
+                  <div class="col-md-6">
+                    <label class="form-label">Fecha</label>
+                    <input class="form-control" id="date" type="date" />
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Palabras clave</label>
+                    <input class="form-control" id="keywords" placeholder="ventas, Q3, resumen" />
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label">Resumen ejecutivo</label>
+                    <textarea class="form-control" id="summary" rows="3">Resumen ejecutivo: puntos clave y recomendaciones principales.</textarea>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label">Métricas destacadas</label>
+                    <div class="row g-2">
+                      <div class="col">
+                        <input class="form-control" id="metric1" placeholder="Ingresos: $..." />
+                      </div>
+                      <div class="col">
+                        <input class="form-control" id="metric2" placeholder="Crecimiento: ..." />
+                      </div>
+                      <div class="col">
+                        <input class="form-control" id="metric3" placeholder="ROI: ..." />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label">Sección A — Análisis</label>
+                    <textarea class="form-control" id="section1" rows="4">Detalles del análisis por métricas y comportamiento.</textarea>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label">Sección B — Recomendaciones</label>
+                    <textarea class="form-control" id="section2" rows="4">Recomendaciones, acciones y responsables.</textarea>
+                  </div>
+                </div>
+
+                <div class="d-flex gap-2 mt-3">
+                  <button type="button" class="btn btn-primary" id="btnGenerate"><i class="fa-solid fa-file-arrow-down me-1"></i> Generar, abrir PDF y descargar</button>
+                  <button type="button" class="btn btn-success" id="btnSend"><i class="fa-solid fa-paper-plane me-1"></i> Abrir Gmail (popup)</button>
+                  <button type="button" class="btn btn-outline-secondary" id="btnPreview"><i class="fa-solid fa-eye me-1"></i> Actualizar vista previa</button>
+                </div>
+
+                <div class="muted mt-2">Consejo: la vista previa y el PDF comparten estilos. Si necesitas mayor fidelidad añade imágenes/CSS dentro de la vista previa.</div>
+              </form>
+            </div>
+          </div>
+
+          <div class="col-lg-6">
+            <div class="card-panel">
+              <h4 style="margin-bottom:6px">Vista previa</h4>
+              <div class="muted" style="margin-bottom:10px">Lo que ves aquí se exportará tal cual al PDF.</div>
+              <div id="reportPreview"></div>
+              <div class="muted" style="margin-top:10px">Revisa tipografías y colores antes de descargar.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="about" role="tabpanel">
+        <div class="card-panel">
+          <h4>Nosotros</h4>
+          <p>Equipo de diseño UX y desarrollo que crea herramientas para generar documentos profesionales con una interfaz agradable y colores que funcionan tanto en pantalla como en PDF.</p>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="features" role="tabpanel">
+        <div class="card-panel">
+          <h4>Características</h4>
+          <ul>
+            <li>Editor con campos útiles (empresa, versión, métricas).</li>
+            <li>Vista previa estilizada y exportable a PDF con colores y tipografía moderna.</li>
+            <li>Abrir Gmail en ventana emergente (popup) y pestaña con PDF para revisar/adjuntar.</li>
+            <li>Todo se genera localmente en tu navegador (privacidad).</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="contact" role="tabpanel">
+        <div class="card-panel">
+          <h4>Contacto</h4>
+          <p>¿Sugerencias? <a href="mailto:soporte@midominio.com">soporte@midominio.com</a></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal para popup Gmail -->
+  <div class="modal fade" id="gmailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Abrir Gmail (popup)</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="form-label">Para</label>
+            <input class="form-control" id="emailTo" placeholder="destinatario@example.com" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Asunto</label>
+            <input class="form-control" id="emailSubject" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Mensaje</label>
+            <textarea class="form-control" id="emailBody" rows="4"></textarea>
+          </div>
+          <div class="muted">Se abrirá una ventana emergente con Gmail (compose). Otra pestaña mostrará el PDF para que puedas descargarlo y adjuntarlo.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="confirmSendBtn" class="btn btn-primary">Abrir Gmail y PDF</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap y dependencias -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    // Acceso a jsPDF UMD bundle
+    const { jsPDF } = window.jspdf;
+
+    // Elementos
+    const previewEl = document.getElementById('reportPreview');
+    const titleEl = document.getElementById('title');
+    const authorEl = document.getElementById('author');
+    const companyEl = document.getElementById('company');
+    const versionEl = document.getElementById('version');
+    const dateEl = document.getElementById('date');
+    const keywordsEl = document.getElementById('keywords');
+    const metric1El = document.getElementById('metric1');
+    const metric2El = document.getElementById('metric2');
+    const metric3El = document.getElementById('metric3');
+    const summaryEl = document.getElementById('summary');
+    const sec1El = document.getElementById('section1');
+    const sec2El = document.getElementById('section2');
+
+    const gmailModal = new bootstrap.Modal(document.getElementById('gmailModal'));
+
+    const today = new Date().toISOString().slice(0,10);
+    if (!dateEl.value) dateEl.value = today;
+
+    function escapeHtml(unsafe) {
+      return unsafe
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+    function nl2br(str) { return str.replace(/\n/g, '<br/>'); }
+
+    // CSS que inyectaremos en el contenedor temporal para el PDF (mejora fidelidad)
+    const injectedPreviewCSS = `
+      @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+      :root{ --accent-a: #7b2ff7; --accent-b: #2ac7ff; }
+      body{ font-family: 'Poppins', Arial, sans-serif; color:#0f172a; background: white; margin:0; padding:0; }
+      .pv-header{ display:flex; justify-content:space-between; align-items:flex-start; padding:12px; border-radius:10px; background: linear-gradient(90deg, rgba(123,47,247,0.08), rgba(42,199,255,0.06)); }
+      .pv-title{ color:var(--accent-a); font-weight:700; font-size:20px; margin:0; }
+      .pv-meta{ color:#334155; font-size:12px; margin-top:6px; }
+      .pv-metrics{ display:flex; gap:12px; margin:14px 0; }
+      .pv-metric{ flex:1; padding:12px; border-radius:10px; background: #fbfdff; border:1px solid rgba(15,23,42,0.04); text-align:center; }
+      .pv-metric .label{ color:#64748b; font-size:12px; }
+      .pv-metric .value{ color:var(--accent-b); font-weight:700; margin-top:6px; font-size:16px; }
+      h3.pv-section-title{ color:#0f172a; margin-bottom:8px; font-size:14px; }
+      p{ color:#334155; font-size:12.5px; line-height:1.45; }
+      footer{ color:#6b7280; font-size:12px; margin-top:18px; }
+      .pv-section, .pv-metric, .pv-header { page-break-inside: avoid; -webkit-column-break-inside: avoid; break-inside: avoid; }
+      @page { size: A4; margin: 12mm; }
+    `;
+
+    // Construye la vista previa en pantalla (misma estructura que se inyecta al PDF)
+    function updatePreview() {
+      const title = titleEl.value || 'Título del informe';
+      const author = authorEl.value || 'Autor';
+      const company = companyEl.value || '';
+      const version = versionEl.value || '';
+      const date = dateEl.value || today;
+      const keywords = keywordsEl.value || '';
+      const m1 = metric1El.value || '-';
+      const m2 = metric2El.value || '-';
+      const m3 = metric3El.value || '-';
+      const summary = summaryEl.value || '';
+      const sec1 = sec1El.value || '';
+      const sec2 = sec2El.value || '';
+
+      previewEl.innerHTML = `
+        <div class="pv-header">
+          <div>
+            <h1 class="pv-title">${escapeHtml(title)}</h1>
+            <div class="pv-meta">${escapeHtml(company)} ${version ? '• ' + escapeHtml(version) : ''}</div>
+            <div class="pv-meta">${escapeHtml(author)} — ${escapeHtml(date)}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="background:linear-gradient(90deg,var(--accent-a),var(--accent-b));color:white;padding:8px 12px;border-radius:8px;font-weight:700;">INFORME</div>
+            ${keywords ? `<div style="margin-top:10px;color:#475569;font-size:13px;">${escapeHtml(keywords)}</div>` : ''}
+          </div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <h3 class="pv-section-title">Resumen ejecutivo</h3>
+          <p>${nl2br(escapeHtml(summary))}</p>
+
+          <div class="pv-metrics">
+            <div class="pv-metric"><div class="label">Ingresos</div><div class="value">${escapeHtml(m1)}</div></div>
+            <div class="pv-metric"><div class="label">Crecimiento</div><div class="value">${escapeHtml(m2)}</div></div>
+            <div class="pv-metric"><div class="label">ROI</div><div class="value">${escapeHtml(m3)}</div></div>
+          </div>
+
+          <div class="pv-section">
+            <h3 class="pv-section-title">Sección A — Análisis</h3>
+            <p>${nl2br(escapeHtml(sec1))}</p>
+          </div>
+
+          <div class="pv-section">
+            <h3 class="pv-section-title">Sección B — Recomendaciones</h3>
+            <p>${nl2br(escapeHtml(sec2))}</p>
+          </div>
+
+          <footer>Generado con Generador de Informes • ${new Date().getFullYear()}</footer>
+        </div>
+      `;
+    }
+
+    updatePreview();
+    document.getElementById('btnPreview').addEventListener('click', updatePreview);
+
+    // =================================================================================
+    // NUEVO: Generación robusta de PDF multi-página usando html2canvas + jsPDF manualmente
+    // Esto evita que el contenido quede pequeño o recortado al abrir en el visor PDF.
+    // Estrategia:
+    // - Clonar la vista previa en un contenedor temporal a tamaño A4 en px (aprox 794 x 1123 a 96dpi)
+    // - Usar html2canvas para renderizarlo en un canvas con un scale alto
+    // - Convertir canvas a imagen y repartir en páginas del jsPDF (unidad 'pt', formato A4)
+    // =================================================================================
+    async function createPdfBlobFull() {
+      updatePreview();
+
+      // A4 en px aproximado a 96dpi: 210mm ≈ 794px, 297mm ≈ 1123px
+      const A4_PX_WIDTH = 794;
+      // Creamos contenedor temporal con ancho A4 para que el layout sea el esperado
+      const temp = document.createElement('div');
+      temp.style.width = A4_PX_WIDTH + 'px';
+      temp.style.background = 'white';
+      temp.style.boxSizing = 'border-box';
+      temp.style.padding = '18px';
+      temp.style.margin = '0';
+      temp.innerHTML = `<style>${injectedPreviewCSS}</style>${previewEl.innerHTML}`;
+
+      // Lo añadimos al DOM (fuera de la vista con position fixed y left -9999)
+      temp.style.position = 'fixed';
+      temp.style.left = '-9999px';
+      document.body.appendChild(temp);
+
+      try {
+        // Escala para mayor resolución (mejor lectura y menos pixelación)
+        const scale = 2; // puedes ajustar a 2 o 3 si necesitas mayor resolución (atención tamaño)
+        const canvas = await html2canvas(temp, {
+          scale,
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: '#ffffff',
+          scrollY: -window.scrollY,
+          width: temp.offsetWidth,
+          // height undefined -> captura todo el contenido vertical
+        });
+
+        // Convertimos canvas a imagen
+        const imgData = canvas.toDataURL('image/jpeg', 1.0);
+
+        // Creamos jsPDF en puntos (pt). A4 en pt: ~595.28 x 841.89
+        const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+
+        // Calculamos la escala para ajustar ancho canvas -> ancho PDF
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const ratio = pdfWidth / canvasWidth;
+        const imgHeightInPdf = canvasHeight * ratio;
+
+        // Añadimos la primera página
+        let position = 0;
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeightInPdf);
+
+        // Si la imagen excede la altura de la página, añadimos páginas adicionales
+        let heightLeft = imgHeightInPdf - pdfHeight;
+        while (heightLeft > -1) {
+          position = position - pdfHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeightInPdf);
+          heightLeft -= pdfHeight;
+        }
+
+        // Obtenemos blob
+        const blob = pdf.output('blob');
+
+        // limpiamos temp
+        temp.remove();
+        return { blob, filename: `${(titleEl.value || 'informe').replaceAll(/\s+/g,'_')}.pdf` };
+      } catch (err) {
+        temp.remove();
+        throw err;
+      }
+    }
+
+    // Descarga/abre PDF completo
+    document.getElementById('btnGenerate').addEventListener('click', async () => {
+      try {
+        const { blob, filename } = await createPdfBlobFull();
+        const url = URL.createObjectURL(blob);
+
+        // Abrir PDF completo en nueva pestaña
+        const opened = window.open(url, '_blank');
+        if (!opened) {
+          // Popup bloqueado -> abrir en la misma pestaña (fallback)
+          window.location.href = url;
+        }
+
+        // Forzar descarga para comodidad del usuario (opcional)
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        // Revocar URL luego (esperar algunos minutos)
+        setTimeout(() => { try { URL.revokeObjectURL(url); } catch(e) {} }, 1000 * 60 * 3);
+      } catch (err) {
+        console.error(err);
+        alert('Error al generar el PDF completo: ' + (err.message || err));
+      }
+    });
+
+    // Abrir Gmail popup y la pestaña con el PDF
+    document.getElementById('btnSend').addEventListener('click', () => {
+      document.getElementById('emailTo').value = '';
+      document.getElementById('emailSubject').value = `${titleEl.value || 'Informe'}`;
+      const brief = summaryEl.value ? summaryEl.value.slice(0, 400) + (summaryEl.value.length > 400 ? '...' : '') : '';
+      document.getElementById('emailBody').value = `Adjunto el informe "${titleEl.value || 'Informe'}". Resumen: ${brief}\n\nRevisa el PDF en la pestaña que se abrirá.`;
+      gmailModal.show();
+    });
+
+    function openCenteredPopup(url, title, w, h) {
+      const dualScreenLeft = window.screenLeft !== undefined ? window.screenLeft : screen.left;
+      const dualScreenTop = window.screenTop !== undefined ? window.screenTop : screen.top;
+      const width = window.innerWidth ? window.innerWidth : document.documentElement.clientWidth ? document.documentElement.clientWidth : screen.width;
+      const height = window.innerHeight ? window.innerHeight : document.documentElement.clientHeight ? document.documentElement.clientHeight : screen.height;
+      const left = ((width / 2) - (w / 2)) + dualScreenLeft;
+      const top = ((height / 2) - (h / 2)) + dualScreenTop;
+      const features = `scrollbars=yes, width=${w}, height=${h}, top=${top}, left=${left}, resizable=yes`;
+      const newWindow = window.open(url, title, features);
+      if (newWindow && newWindow.focus) newWindow.focus();
+      return newWindow;
+    }
+
+    document.getElementById('confirmSendBtn').addEventListener('click', async () => {
+      const to = document.getElementById('emailTo').value.trim();
+      const subject = document.getElementById('emailSubject').value || titleEl.value || 'Informe';
+      const body = document.getElementById('emailBody').value || '';
+
+      if (!to) { alert('Introduce la dirección del destinatario.'); return; }
+      gmailModal.hide();
+
+      try {
+        const { blob, filename } = await createPdfBlobFull();
+
+        // 1) abrir la pestaña con el PDF (completa)
+        const pdfUrl = URL.createObjectURL(blob);
+        window.open(pdfUrl, '_blank');
+
+        // 2) abrir Gmail compose en popup centrado (si popup bloqueado, se abrirá en pestaña)
+        const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body + '\n\nAdjunto: ' + filename)}`;
+        const popup = openCenteredPopup(gmailUrl, 'Gmail - Componer', 900, 700);
+
+        if (!popup) {
+          window.open(gmailUrl, '_blank');
+          alert('El popup fue bloqueado. Gmail se abrió en una nueva pestaña. Revisa también la pestaña con el PDF para adjuntarlo.');
+        } else {
+          alert('Se abrió una ventana con Gmail y una pestaña con el PDF. Adjunta el PDF desde la pestaña del PDF si deseas enviarlo como adjunto.');
+        }
+
+        // limpiar URL temporal después de unos minutos
+        setTimeout(() => {
+          try { URL.revokeObjectURL(pdfUrl); } catch (e) {}
+        }, 1000 * 60 * 3);
+      } catch (err) {
+        console.error(err);
+        alert('Error preparando el envío: ' + (err.message || err));
+      }
+    });
+
+    // Actualizar vista previa de forma reactiva con throttling
+    const inputs = [titleEl, authorEl, companyEl, versionEl, dateEl, keywordsEl, metric1El, metric2El, metric3El, summaryEl, sec1El, sec2El];
+    inputs.forEach(i => {
+      i.addEventListener('input', () => {
+        if (window._pvTimer) clearTimeout(window._pvTimer);
+        window._pvTimer = setTimeout(() => { updatePreview(); }, 180);
+      });
+    });
+  </script>
+</body>
+</html>
